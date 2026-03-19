@@ -222,7 +222,7 @@ class STCLTab(DeviceTab):
         print(worker_initialisation_kwargs)
         self.create_worker(
             'main_worker',
-            'coldmol_devices.RP_STCL.blacs_workers.STCLWorker',
+            'user_devices.RP_STCL.blacs_workers.STCLWorker',
             worker_initialisation_kwargs,
         )
         self.primary_worker = 'main_worker'

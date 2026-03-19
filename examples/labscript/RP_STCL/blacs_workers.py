@@ -247,7 +247,7 @@ class STCLWorker(Worker):
                 print(f'latest: {vals[0]}')
                 print(f'running avg: {erravg}')
                 print(f'RMS: {np.sqrt(np.average(np.square(vals)))}')
-                if stream['name'] not in setpoints_to_update.keys(): #only check this if we didn't just change the value
+                if stream['name'] not in setpoints_to_update.keys() and self.error_margin is not None: #only check this if we didn't just change the value and the margin is actually set
                     if np.abs(erravg)>self.error_margin: #the average seems to give the best idea of the lock
                         print(f'WARNING: laser {stream['name']} appears unlocked')
                         if self.error_on_unlock:
