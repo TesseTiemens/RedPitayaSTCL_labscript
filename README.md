@@ -70,6 +70,8 @@ Download the contents of the repository as a .zip file and unpack it in an insta
 * matplotlib (Qt5Agg backend is used for monitoring)
 * scipy
 
+For the labscript/remote control, additionally the `heros` and `zenoh` packages are needed, with optionally `pyzmq` for logging and acting on error values from labscript.
+
 On the RedPitayas no packages have to be installed, since the STCL code is transferred via ssh from the PC. After that, update the `PYTHONPATH` to include the folder `RedPitayaSTCL`, which contains all the scipts in the repository. Finally, follow instructions as described in the following paragraph
 
 <p align="right">(<a href="#top">back to top</a>)</p>
@@ -99,6 +101,15 @@ With this addition, it is possible to keep the lock stable over at least several
 #### Usage as a frequency monitor:
 
 The error signal of the unstabilized follower laser(s) can also serve as a frequency reference, e.g. in a spectroscopy measurement. In such a measurement the laser(s) are typically scanned externally and one is interested in assigning a precise frequency to each datapoint. To achieve this we calibrate the frequency axis by locking the cavity and setting the laser to be scanned to the lowest and highest desired frequency of the scan. These frequency values are calibrated by recording frequency samples on a wavemeter. Through this procedure, we obtain a mapping from “error space” to frequency space via a linear fit through the error-frequency value pairs. The error of this mapping is limited primarily by the wavemeter uncertainty, as the cavity error is on the order of 1 MHz. If the laser frequency scan behaves non-linearly, the wavemeter monitoring can be run in the background during the entire measurement, so that during the evaluation the nonlinearity can be accounted for. An example can be found in `RedPitayaSTCL/examples/FrequencyAxisCalibrationExample.py`.
+
+### Remote control and labscript implementation
+The lock can be conrolled from a different pc than where it is running through the [heros package](https://heros-761c0f.gitlab.io/). This allows the lockclient object, along with its methods, to be passed around between different processes and pcs. The easiest way to use this is to update (with your own config) and run in one terminal the `lockclient_heros.py` in this folder. This will take care of initial setup, starting the cavity scan, and the monitor. You can then take remote control of this with the manual control scripts in the labscript example folder. Most important to note here is the fact that the RemoteHERO object is always used in a context manager, this makes sure it gets released again so it can be used elsewhere. Other than that, the lockclient can be mostly used as normal, with the exception that attributes (such as `Lock.RPs`) are no longer directly accessible. Instead, we have added in this version of `lockclient.py` several helper functions, such as `get_monitor_status` and `mon_queue_put` to take care of the more common usecases.
+
+#### Labscript and zmq streams
+The major advantage of having remote control of the lockclient is that we can use labscript or some other experiment control software to automatically set lockpoints during spectroscopy. An implementation of such a tie into labscript can be found under examples/labscript/RP_STCL. This code can set the lockpoint, then wait untill its settled, and also check before each shot if your lasers are still locked. The latter two it does by relying on a zmq datastream coming from the error monitor. To keep behaviour backwards compatible with the normal lockclient, this is disabled by default, but can now be enabled by setting `zmq_pub=True` in the call to `start_error_monitor()`. Besides labscript, this can also be used along with a `zmq.SUB` socket to live log error values in your software of choise. We do also have a zmq logger in the works for labscript but it is not yet public.
+
+#### Troubleshooting zenoh/heros issues
+In our network, we had some issues having the heros instances find each other. To solve this, we used a zenoh router, which can be found [here](https://download.eclipse.org/zenoh/zenoh/latest/). In that case, switch the zenoh config files to a version `zenoh_config_router.json5` adapted for the location where your router runs.
 
 
 <!-- MARKDOWN LINKS & IMAGES -->

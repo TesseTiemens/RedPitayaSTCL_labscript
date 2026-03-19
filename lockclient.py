@@ -877,6 +877,25 @@ class LockClient(Sender):
         List of bool [monitor status, error monitor status]
         """
         return [self.monitors[RP]["running"].value, self.monitors[RP]["running_err"].value]
+    
+    def mon_queue_put(self,RP,queue,command,argument):
+        """
+        Adds item to specified monitor queue of specified redpitaya. Heros friendly version of
+        something like Lock.monitors['Mon']['queue_err'].put(('save', folder))
+
+        Parameters
+        ----------
+        RP : str
+            Key of the monitoring RedPitaya in question.
+        queue: str
+            Key of the queue in question (queue or queue_error)
+        command: str
+            Command to pass into the queue
+        argument: any
+            Argument to pass with the command
+        """
+
+        self.monitors[RP][queue].put((command,argument))
 
     ############## RP related functions #######################################
 
