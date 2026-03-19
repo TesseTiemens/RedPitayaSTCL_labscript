@@ -106,7 +106,14 @@ class LockClient(Sender):
             else:
                 self._load_default_settings(key)
             self.save_settings(key)  # afterwards, create a file with these settings!
-
+    
+    def get_RP_modes(self):
+        """Returns a dict of the redpitaya modes, since the heros implementation doesn't allow accessing attributes directly"""
+        modedict = {}
+        for key,val in self.RPs.items():
+            modedict[key] = val.mode
+        return modedict
+    
     def start(self):
         """
         Starts up the LockClient, which includes the event loop and synchronizes
@@ -745,7 +752,7 @@ class LockClient(Sender):
     ################ Monitoring related functions ######################
     @_check_for_loop
     @_check_cavity_scanned
-    def start_error_monitor(self, RP, tmin=10e-3):
+    def start_error_monitor(self, RP, tmin=10e-3,zmq_pub = False,zmq_addr=None,zmq_port=6200):
         """
         Starts the error monitoring. Using multiprocessing, an event loop is run
         to repeatedly read out locking errors from the monitoring RedPitaya. These
@@ -758,6 +765,13 @@ class LockClient(Sender):
         tmin : float, optional
             Minimum waiting time for between each step in seconds. Is used to optimize the
             data transfer for this monitoring application. The default is 10e-3.
+        zmq_pub : bool, optional
+            Whether or not to publish the error values to a zmq PUB stream. Requries pyzmq to be installed. 
+            When set, the error of each slave gets published under its own topic. Defaults to False
+        zmq_addr : str or None, optional:
+            The address to bind the zmq stream to. Defaults to None, in which case the stream binds to all interfaces
+        zmq_port : int, optional:
+            The port for publishing the error data stream
 
         """
         if RP in self.monitors:
@@ -768,7 +782,7 @@ class LockClient(Sender):
             self.p = mp.Process(
                 target=monitor_errors,
                 args=(mon["running_err"], self.RPs[RP], mon["queue_err"], settings),
-                kwargs=dict(FSR=self.FSR, tmin=tmin),
+                kwargs=dict(FSR=self.FSR, tmin=tmin,zmq_pub = zmq_pub,zmq_addr=zmq_addr,zmq_port=zmq_port),
             )
             self.p.daemon = True
             self.p.start()
@@ -848,6 +862,40 @@ class LockClient(Sender):
                 self.monitors[RP]["queue_err"].put(("stop", None))
         else:
             print("Monitor not running!")
+    
+    def get_monitor_status(self, RP):
+        """
+        Returns status of the monitor and error monitor for the speicified RedPitaya
+
+        Parameters
+        ----------
+        RP : str
+            Key of the monitoring RedPitaya in question.
+
+        Returns
+        -----------
+        List of bool [monitor status, error monitor status]
+        """
+        return [self.monitors[RP]["running"].value, self.monitors[RP]["running_err"].value]
+    
+    def mon_queue_put(self,RP,queue,command,argument):
+        """
+        Adds item to specified monitor queue of specified redpitaya. Heros friendly version of
+        something like Lock.monitors['Mon']['queue_err'].put(('save', folder))
+
+        Parameters
+        ----------
+        RP : str
+            Key of the monitoring RedPitaya in question.
+        queue: str
+            Key of the queue in question (queue or queue_error)
+        command: str
+            Command to pass into the queue
+        argument: any
+            Argument to pass with the command
+        """
+
+        self.monitors[RP][queue].put((command,argument))
 
     ############## RP related functions #######################################
 
@@ -1329,7 +1377,7 @@ class Monitor(Sender):
 
 
 class ErrorMonitor(Sender):
-    def __init__(self, RP, queue, settings, FSR=906, tmin=10e-3, bool_var=None):
+    def __init__(self, RP, queue, settings, FSR=906, tmin=10e-3, bool_var=None,zmq_pub = False,zmq_addr=None,zmq_port=6200):
         Sender.__init__(self)
         self.mode = "monitor"
         self.FSR = FSR
@@ -1339,6 +1387,17 @@ class ErrorMonitor(Sender):
         self._fig = None
         self.settings = settings
         self.monitor_running = bool_var  # a shared boolean variable
+        self.zmq_pub = zmq_pub
+        #in case we want to publish errors to access them elsewhere
+        #we set up a zmq socket, configure it for PUB/SUB streams, and bind it to the right interface
+        if zmq_pub:
+            import zmq
+            self.socket = zmq.Context().socket(zmq.PUB) 
+            self.socket.setsockopt(zmq.SNDHWM,1)
+            if not zmq_addr: #if no address is set we bind to all interfaces
+                zmq_addr = '*' 
+            print(f'Binding error monitor socket to tcp://{zmq_addr}:{zmq_port}')
+            self.socket.bind(f"tcp://{zmq_addr}:{zmq_port}")
 
     def stop_monitor(self, event):
         self.monitor_running.value = (
@@ -1459,6 +1518,9 @@ class ErrorMonitor(Sender):
                     self.errs[key].append(
                         new_errs[key] * self.FSR
                     )  # update the error value
+                    if self.zmq_pub:
+                        self.socket.send_string(f'{key}; {new_errs[key]}')
+                        #print(f'sent {key}: {new_errs[key]}')
                 else:
                     self.errs[key].append(np.nan)  # otherwise, fill it with nan value.
 
